@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard | Expense Tracker</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="nav-left">
+      <a class="brand" href="/home.html">ExpenseTracker</a>
+    </div>
+    <div class="nav-right">
+      <a class="btn" href="/add-expense.html">Add Expense</a>
+      <a class="btn" href="/expenses.html">View Expenses</a>
+      <a class="btn" href="/logout">Logout</a>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="main container">
+    <section class="overview">
+      <div class="card">
+        <h4>This Month</h4>
+        <p class="big" id="monthTotal">₹0.00</p>
+        <small id="monthRange"></small>
+      </div>
+
+      <div class="card">
+        <h4>This Year</h4>
+        <p class="big" id="yearTotal">₹0.00</p>
+        <small id="yearRange"></small>
+      </div>
+
+      <div class="card">
+        <h4>Avg / Month (Year)</h4>
+        <p class="big" id="avgMonthly">₹0.00</p>
+        <small>Average of months with data</small>
+      </div>
+
+      <div class="card">
+        <h4>Savings (Budget)</h4>
+        <p class="big" id="savings">₹0.00</p>
+        <small>
+          Budget: ₹<input id="budgetInput" type="number" min="0" step="0.01" style="width:90px" />
+          <button id="saveBudgetBtn" class="small-btn">Save</button>
+        </small>
+      </div>
+    </section>
+
+    <section class="charts">
+      <div class="chart-card">
+        <h3>This Month — By Category</h3>
+        <canvas id="pieChart" aria-label="Spending by category this month"></canvas>
+      </div>
+
+      <div class="chart-card">
+        <h3>Yearly Monthly Totals (current year)</h3>
+        <canvas id="barChart" aria-label="Monthly totals for the year"></canvas>
+      </div>
+    </section>
+
+    <section class="recent container-card">
+      <h3>Recent Expenses</h3>
+      <div id="recentList" class="recent-list"></div>
+    </section>
+  </main>
+
+  <script>
+    // Categories used elsewhere (same list used by add-expense)
+    const CATEGORIES = [
+      "Groceries",
+      "Food & Drink",
+      "Transport",
+      "Rent",
+      "Utilities",
+      "Shopping",
+      "Entertainment",
+      "Health",
+      "Education",
+      "Travel",
+      "Other"
+    ];
+
+    let pieChart = null;
+    let barChart = null;
+
+    // INR formatter (use everywhere)
+    const INR = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2
+    });
+
+    function currency(v) {
+      return INR.format(Number(v || 0));
+    }
+
+    // get monthly budget from localStorage
+    function getBudget() {
+      const raw = localStorage.getItem("monthlyBudget");
+      return raw ? Number(raw) : 0;
+    }
+    function setBudget(val) {
+      localStorage.setItem("monthlyBudget", String(val));
+    }
+
+    async function loadAndRender() {
+      try {
+        const res = await fetch("/expenses-list");
+        if (!res.ok) {
+          console.warn("Could not load expenses (maybe redirected to login).");
+          return;
+        }
+        const expenses = await res.json();
+        renderDashboard(expenses);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function renderDashboard(expenses) {
+      const now = new Date();
+      const curMonth = now.getMonth(); // 0-based
+      const curYear = now.getFullYear();
+
+      // totals
+      let monthTotal = 0;
+      let yearTotal = 0;
+
+      // group by category for current month
+      const monthCategory = {};
+      // group by month for current year
+      const monthly = new Array(12).fill(0);
+
+      // sort expenses descending by date for recent list
+      const sorted = expenses.slice().sort((a,b) => new Date(b.date) - new Date(a.date));
+
+      for (const e of expenses) {
+        const d = new Date(e.date);
+        const amt = Number(e.amount || 0);
+
+        if (d.getFullYear() === curYear) {
+          monthly[d.getMonth()] += amt;
+          yearTotal += (d.getFullYear() === curYear) ? amt : 0;
+        }
+        if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
+          monthTotal += amt;
+          const cat = e.category || "Other";
+          monthCategory[cat] = (monthCategory[cat] || 0) + amt;
+        }
+      }
+
+      // compute avg monthly: average of months in this year that have >0
+      const monthsWithData = monthly.filter(v => v > 0);
+      const avgMonthly = monthsWithData.length ? (monthsWithData.reduce((a,b)=>a+b,0)/monthsWithData.length) : 0;
+
+      // populate top cards
+      document.getElementById("monthTotal").textContent = currency(monthTotal);
+      document.getElementById("yearTotal").textContent = currency(yearTotal);
+      document.getElementById("avgMonthly").textContent = currency(avgMonthly);
+      document.getElementById("monthRange").textContent = `(${now.toLocaleString('default', { month: 'long' })} ${curYear})`;
+      document.getElementById("yearRange").textContent = `(${curYear})`;
+
+      // Budget and savings
+      const budgetInput = document.getElementById("budgetInput");
+      budgetInput.value = getBudget();
+      const savings = getBudget() - monthTotal;
+      document.getElementById("savings").textContent = currency(savings);
+
+      // Recent list (show 6)
+      const recentEl = document.getElementById("recentList");
+      recentEl.innerHTML = "";
+      sorted.slice(0, 6).forEach(e => {
+        const div = document.createElement("div");
+        div.className = "recent-item";
+        div.innerHTML = `
+          <div class="ri-left">
+            <div class="ri-desc">${escapeHTML(e.description)}</div>
+            <div class="ri-meta">${escapeHTML(e.category)} • ${new Date(e.date).toLocaleDateString()}</div>
+          </div>
+          <div class="ri-right">${currency(e.amount)}</div>
+        `;
+        recentEl.appendChild(div);
+      });
+
+      // Render pie chart (month by category)
+      renderPieChart(Object.keys(monthCategory), Object.values(monthCategory));
+
+      // Render bar chart (months)
+      renderBarChart(monthly);
+    }
+
+    function escapeHTML(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderPieChart(labels, values) {
+      const ctx = document.getElementById("pieChart").getContext("2d");
+      if (pieChart) pieChart.destroy();
+      if (!labels.length) {
+        // clear canvas
+        ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
+        return;
+      }
+      pieChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: generateColors(labels.length)
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.label || '';
+                  const value = context.raw || 0;
+                  return `${label}: ${INR.format(Number(value))}`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderBarChart(monthlyArray) {
+      const ctx = document.getElementById("barChart").getContext("2d");
+      if (barChart) barChart.destroy();
+      const monthLabels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      barChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: monthLabels,
+          datasets: [{
+            label: 'This year',
+            data: monthlyArray.map(v => Number(v.toFixed ? v.toFixed(2) : v)),
+            backgroundColor: 'rgba(102,126,234,0.8)'
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: function(val) { return INR.format(val); }
+              }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const value = context.raw || 0;
+                  return `${INR.format(Number(value))}`;
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function generateColors(n) {
+      const base = [
+        '#667eea','#764ba2','#f39c12','#e74c3c','#1abc9c','#2ecc71','#3498db','#9b59b6','#f1c40f','#e67e22'
+      ];
+      const arr = [];
+      for (let i=0;i<n;i++) arr.push(base[i%base.length]);
+      return arr;
+    }
+
+    // Save budget button
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("saveBudgetBtn").addEventListener("click", () => {
+        const val = Number(document.getElementById("budgetInput").value || 0);
+        setBudget(val);
+        loadAndRender(); // refresh savings
+      });
+      loadAndRender();
+    });
+  </script>
+
+  <!-- show logged-in user in nav (shared script) -->
+  <script src="js/me.js" defer></script>
+</body>
+</html>

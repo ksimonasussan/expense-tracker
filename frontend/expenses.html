@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>All Expenses | Expense Tracker</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <style>
+    /* Small table-card styles to match the dashboard theme */
+    .table-card {
+      background: #fff;
+      padding: 14px;
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(35,35,77,0.04);
+      margin-top: 18px;
+    }
+
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 640px;
+      table-layout: fixed;
+    }
+
+    th, td {
+      border: 1px solid #f0f2ff;
+      padding: 10px;
+      text-align: left;
+      font-size: 14px;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    th {
+      background: #f7f8ff;
+      color: #333;
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) { background: #fbfbff; }
+
+    .actions {
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+      align-items:center;
+    }
+
+    .action-btn {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: none;
+      cursor:pointer;
+      font-weight:600;
+      font-size:13px;
+    }
+    .edit-btn { background:#f39c12; color:#fff; }
+    .delete-btn { background:#e74c3c; color:#fff; }
+
+    /* Inline edit form */
+    .edit-inline-form {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-start;
+    }
+    .edit-inline-form input, .edit-inline-form select {
+      padding:8px;
+      border-radius:8px;
+      border:1px solid #e6e9fb;
+      font-size:13px;
+      max-width:170px;
+      box-sizing:border-box;
+    }
+    .edit-inline-form .small { max-width:100px; }
+
+    /* Responsive tweaks */
+    @media (max-width: 900px) {
+      th, td { font-size:13px; padding:8px; white-space:normal; }
+      table { min-width: 100%; }
+      .edit-inline-form input { max-width: 48%; }
+    }
+    @media (max-width: 600px) {
+      .edit-inline-form { gap:6px; }
+      .edit-inline-form input { max-width:100%; }
+    }
+  </style>
+
+  <!-- shared script to show logged-in user in nav -->
+  <script src="js/me.js" defer></script>
+</head>
+<body>
+  <!-- NAV (same style as other pages) -->
+  <nav class="nav">
+    <div class="nav-left">
+      <a class="brand" href="/home.html">ExpenseTracker</a>
+    </div>
+    <div class="nav-right">
+      <a class="btn" href="/add-expense.html">Add Expense</a>
+      <a class="btn" href="/home.html">Dashboard</a>
+      <a class="btn" href="/logout">Logout</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <div class="table-card">
+      <h2>All Expenses</h2>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:120px">Date</th>
+              <th>Description</th>
+              <th style="width:140px">Category</th>
+              <th style="width:120px; text-align:right">Amount (INR)</th>
+              <th style="width:170px; text-align:center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="expenseTableBody">
+            <!-- rows injected here -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // INR formatter
+    const INR = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2
+    });
+
+    // Load expenses and render table
+    async function loadExpenses() {
+      try {
+        const res = await fetch("/expenses-list");
+        if (!res.ok) {
+          console.warn("Could not load expenses (maybe redirected to login).");
+          return;
+        }
+        const data = await res.json();
+        renderTable(data);
+      } catch (err) {
+        console.error("Error loading expenses:", err);
+      }
+    }
+
+    function renderTable(data) {
+      const tbody = document.getElementById("expenseTableBody");
+      tbody.innerHTML = "";
+
+      // sort newest first
+      data.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+      data.forEach(e => {
+        const tr = document.createElement("tr");
+
+        const date = safe(e.date);
+        const desc = safe(e.description);
+        const cat  = safe(e.category);
+        const amtNum  = Number(e.amount || 0); // numeric value
+
+        // Use INR formatter for display, but pass raw number into edit form
+        tr.innerHTML = `
+          <td title="${escapeAttr(date)}">${formatDate(date)}</td>
+          <td title="${escapeAttr(desc)}">${escapeHtml(desc)}</td>
+          <td title="${escapeAttr(cat)}">${escapeHtml(cat)}</td>
+          <td style="text-align:right">${INR.format(amtNum)}</td>
+          <td style="text-align:center">
+            <div class="actions">
+              <button class="action-btn edit-btn" onclick="enterEdit('${e._id}', '${escapeJs(date)}', '${escapeJs(desc)}', '${escapeJs(cat)}', '${amtNum}')">Edit</button>
+              <form action="/delete-expense/${e._id}" method="POST" style="display:inline;">
+                <button type="submit" class="action-btn delete-btn">Delete</button>
+              </form>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // if empty, show message row
+      if (data.length === 0) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="5" style="text-align:center; color:#666; padding:24px">No expenses yet. Click "Add Expense" to create one.</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    // convert "YYYY-MM-DD" (or ISO) to readable
+    function formatDate(d) {
+      if (!d) return '';
+      const dt = new Date(d);
+      if (isNaN(dt)) return d;
+      return dt.toLocaleDateString();
+    }
+
+    function safe(v) { return v == null ? '' : String(v); }
+
+    // Escape for HTML content (not attribute)
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    // Escape for attributes and JS strings
+    function escapeAttr(s) {
+      if (s == null) return '';
+      return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // escape string for embedding in JS single-quoted literal
+    function escapeJs(s) {
+      if (s == null) return '';
+      return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // Replace the row with inline edit form
+    // Note: 'amount' parameter here is numeric (not formatted)
+    function enterEdit(id, date, description, category, amount) {
+      // find the row that has the delete form for this id
+      const deleteForm = document.querySelector(`form[action='/delete-expense/${id}']`);
+      if (!deleteForm) return;
+      const row = deleteForm.closest('tr');
+
+      // Use a single-cell edit form (colspan) to avoid layout jumps
+      row.innerHTML = `
+        <td colspan="5">
+          <form action="/edit-expense/${id}" method="POST" class="edit-inline-form" onsubmit="return validateEdit(this);">
+            <input type="date" name="date" value="${escapeAttr(date)}" required />
+            <input type="text" name="description" value="${escapeAttr(description)}" placeholder="Description" required />
+            <select name="category" required>
+              ${renderCategoryOptions(category)}
+            </select>
+            <input class="small" type="number" step="0.01" name="amount" value="${Number(amount || 0)}" required />
+            <button type="submit" class="action-btn edit-btn">Save</button>
+            <button type="button" class="action-btn" onclick="loadExpenses()">Cancel</button>
+          </form>
+        </td>
+      `;
+    }
+
+    // basic validation before submitting edit
+    function validateEdit(form) {
+      const amt = Number(form.amount.value);
+      if (isNaN(amt) || amt < 0) {
+        alert("Please enter a valid non-negative amount.");
+        return false;
+      }
+      return true;
+    }
+
+    // Render category <option> list (same categories used elsewhere)
+    function renderCategoryOptions(selected) {
+      const cats = [
+        "Groceries","Food & Drink","Transport","Rent","Utilities",
+        "Shopping","Entertainment","Health","Education","Travel","Other"
+      ];
+      return cats.map(c => `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`).join('');
+    }
+
+    // helper to safely put values into input value attribute
+    function htmlEscapeForValue(s) {
+      if (s == null) return '';
+      return String(s).replace(/"/g, '&quot;').replace(/'/g, "&#39;");
+    }
+
+    // initial load
+    document.addEventListener('DOMContentLoaded', loadExpenses);
+  </script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Add Expense | Expense Tracker</title>
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+    <nav class="nav">
+        <div class="nav-left">
+            <a class="brand" href="/home.html">ExpenseTracker</a>
+        </div>
+        <div class="nav-right">
+            <a class="btn" href="/home.html">Dashboard</a>
+            <a class="btn" href="/expenses.html">View Expenses</a>
+            <a class="btn" href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="form-card">
+            <h2>Add New Expense</h2>
+            <form action="/add-expense" method="POST" class="form-large">
+                <label>
+                    Date
+                    <input type="date" name="date" required />
+                </label>
+
+                <label>
+                    Description
+                    <input type="text" name="description" placeholder="e.g., Coffee, Uber, Groceries" required />
+                </label>
+
+                <label>
+                    Category
+                    <select name="category" required>
+                        <option value="" disabled selected>Select a category</option>
+                        <option>Groceries</option>
+                        <option>Food & Drink</option>
+                        <option>Transport</option>
+                        <option>Rent</option>
+                        <option>Utilities</option>
+                        <option>Shopping</option>
+                        <option>Entertainment</option>
+                        <option>Health</option>
+                        <option>Education</option>
+                        <option>Travel</option>
+                        <option>Other</option>
+                    </select>
+                </label>
+
+                <label>
+                    Amount (INR)
+                    <input type="number" name="amount" step="0.01" placeholder="0.00" required />
+                </label>
+
+
+                <div style="display:flex; gap:10px; margin-top:12px;">
+                    <button class="btn" type="submit">Save Expense</button>
+                    <a class="btn ghost" href="/home.html">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </main>
+</body>
+<script src="js/me.js" defer></script>
+
+</html>
